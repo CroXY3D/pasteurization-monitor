@@ -1,0 +1,172 @@
+{
+	"auto_complete":
+	{
+		"selected_items":
+		[
+		]
+	},
+	"buffers":
+	[
+		{
+			"contents": "\n\n#include <Arduino.h>\n#include <OneWire.h>\n#include <DallasTemperature.h>\n#include <Wire.h>\n#include <EEPROM.h>\n#include <Adafruit_MCP23017.h>\n#include <Adafruit_RGBLCDShield.h>\n#include <LcdBarGraphAda.h>\n\n// ADAFRUIT LCD backpack color defines\n#define RGBLCD_RED 0x1\n#define RGBLCD_GREEN 0x2\n#define RGBLCD_BLUE 0x4\n#define RGBLCD_YELLOW (RGBLCD_RED | RGBLCD_GREEN)\n#define RGBLCD_MAGENTA (RGBLCD_RED | RGBLCD_BLUE)\n#define RGBLCD_TEAL (RGBLCD_GREEN | RGB_LCD_BLUE)\n#define RGBLCD_WHITE (RGBLCD_RED | RGBLCD_GREEN | RGBLCD_BLUE)\n\n\n// PIN ASSIGNMENTS\n#define STROBE_PIN 1\n#define PIEZO_PIN 8\n#define ONE_WIRE_SENSOR_BOTTLE_PIN 12\n//#define ONE_WIRE_SENSOR_BATH_PIN 13\n\n\n// DEFAULT PASTEURIZATION SETTINGS\n#define PAST_REFTEMP 60.0  // Should be 60C\n#define PAST_RESETTEMP 30.0  // should be around 25 or 30 \n#define PAST_ZVALUE 7.0\n#define PAST_THRESHOLD_PULL  25.0 // # of PU when should be pulled from bath\n#define PAST_THRESHOLD_COMPLETE 50.0 // # of PUs when completed\n\n// These are also used as EEPROM addresses for each of these settings (Except PROG_RUN), and must match SETTINGS structure\n#define PROG_RUN 0\n#define PROG_SETTINGPULL 1\n#define PROG_SETTINGCOMPLETE 2\n#define PROG_SETTINGREFTEMP 3\n#define PROG_SETTINGZVALUE 4    // uggg, need more precision.   store x10?\n#define PROG_SETTINGRESETTEMP 5\n#define PROG_MIN 0\n#define PROG_MAX 6\n\n  \n#define SETTINGS_VER 3    // bump when settings struct changes\n// Settings\n//    Stores user modifiable settings in EEPROM\n//\n//  WARNING!  Must be simple class.   Bump SETTINGS_VER if class is modified\nclass Settings\n  {\npublic:    \n  Settings()\n    {\n    Init();\n \n    };\n  \n  void Init();  \n  void WriteEEPROM();\n  int FReadEEPROM();  \n  uint8_t GetSetting(int md);\n  void SetSetting(int md, uint8_t b);\n \n    \n  uint8_t bVer;\n  uint8_t wPUPull;\n  uint8_t wPUComplete;\n  uint8_t wRefTemp;\n  uint8_t wZValue;\n  uint8_t wResetTemp;\n  };\n  \n\n\n// Setting flags\n#define SF_BYTE 0x01\n#define SF_TEMPERATURE 0x80\n\ntypedef struct _settingentry\n  {\n  char *szName;\n  uint8_t flags;\n  uint8_t bMin;\n  uint8_t bMax;\n  } SETTING_ENTRY;\n\n// WARNING:  Must mirror Settings class layout  \nSETTING_ENTRY rgse[] =\n  {\n    {\"Pull at PU\", SF_BYTE, 1, 100},\n    {\"Total PU\", SF_BYTE ,1, 100},\n    {\"Ref T\", SF_BYTE|SF_TEMPERATURE,20,80},\n    {\"Z Value\", SF_BYTE,1, 20},\n    {\"Zero PU T\", SF_BYTE|SF_TEMPERATURE,0, 100}\n  };  \n\n\n\n\nclass PMan\n  {\npublic: \n  PMan() : oneWireBottle(ONE_WIRE_SENSOR_BOTTLE_PIN), sensorsBottle(&oneWireBottle)\n    {\n    fAlertsEnabled = 1;\n    fStrobeOn = 0;\n    //bg.setup(&lcd, 16, 0, 1);\n    };\n\n\n  void setup();\n  void loop();\n   \nprivate:  \n  void SetPastMode(int md);\n  int FReadTemperatures(void);\n  void HandlePasteurization(void);\n  void DisplayPasteurizationProgress(void);\n  void MakePasteurizationSounds(void);\n  void UpdateStrobe();\n  void HandleButtons(void);\n  void DelayButtonUp(int ms);\n  \n  \n  void HandleSettings(uint8_t buttons);\n  void DisplaySetting(void);\n\nvoid print2Digits(int w);\nvoid printFloat2(float num, int digRight);\nvoid printTemp(char * strLabel, float numTemp, int prec);\nvoid printMMSS(unsigned long ms);\n \n\n  void SetSettingFromMdProg(uint8_t b) { settings.SetSetting(mdProg, b); }\n  uint8_t GetSettingFromMdProg() {return settings.GetSetting(mdProg);}\n  \n  Adafruit_RGBLCDShield lcd;  // = Adafruit_RGBLCDShield();\n\n\n  // temp\n  void InitBargraph(void);  \n  void DrawBargraph(float value, float maxValue);\n\n  LcdBarGraphAda bg; // = LcdBarGraphAda(&lcd, 16);\n  \n  Settings settings;\n\n  int mdProg;\n  int mdPast;\n\n  // process variables\n  float numTempHeater;\n  float numTempBath;\n  float numTempBottle;\n  double  numPU;\n  unsigned long msTime;\n  unsigned long msTimePasteurization;\n \n  unsigned long msLastButton;\n  unsigned long msSoundInterval;\n  int fAlertsEnabled;\n  int fStrobeOn;\n  \n  // Setup a oneWire instance to communicate with any OneWire devices (not just Maxim/Dallas temperature ICs)\n  OneWire oneWireBottle; //(ONE_WIRE_SENSOR_BOTTLE_PIN);\n  //OneWire oneWireBath(ONE_WIRE_SENSOR_BATH);\n\n\n// Pass our oneWire reference to Dallas Temperature. \n  DallasTemperature sensorsBottle; //(&oneWireBottle);\n  //DallasTemperature sensorsBath(&oneWireBath);\n\n  \n  };\n\n\n\nPMan pman;\n\n\n// The shield uses the I2C SCL and SDA pins. On classic Arduinos\n// this is Analog 4 and 5 so you can't use those for analogRead() anymore\n// However, you can connect other I2C sensors to the I2C bus and share\n// the I2C bus.\n\n\n\n#define DEG_CHAR 223\n#define PU_CHAR 7\n#define DHC_CHAR 6\nuint8_t rgbPUChar[] = {0x1c,0x14,0x1c,0x10,0x15,0x5,0x7,0x0};\nuint8_t rgbDHCChar[] = {0x6,0xf,0x1f,0x1f,0xb,0x7,0xf,0xf};\n#define DX_LCD 16\n#define DY_LCD 2\n\n// globals used by HandlePasteurization and DisplayPasteurizationProgress\n\n\n\n#define PAST_MODE_COLD 0\n#define PAST_MODE_ACCUMULATING 1\n#define PAST_MODE_PULL 2\n#define PAST_MODE_COMPLETE 3\n\n\n\n\n\n/* Hardware design:\n\nLCD:\n  0123456789012345\n  HXXo BXXo CXX.Xo    // o == Degree symbol.   Degrees in C\n  XX.X PU    mm:ss\n\n40x4 LCD:  (To be coded and doesn't even exist!!! it's 20x4)\n            1         2         3\n  0123456789012345678901234567890123456789\n  \n  Heat: XXoC^ Bath: XXoC^ Sanple: XX.XoC^\n  PU: XXX.X Time: H:MM:SS PU Time: H:MM:SS\n  PU  XXXXXXXXXXXX|XXXXXX                |\n  <Message>\n  \n  ^ means up/down arrow symbol.  Updated every ???\n  <Message>  (scrolling?)\n    Sample Cold\n    Sample Pasteurizing\n    Pull from Bath!!!!\n    Pasteurization Complete\n    Bath Temperature Low\n    \n    Time computed when?   When Temp > ??\n    \n    \n20x4 LCD:\n            1         \n  01234567890123456789\n  Btl XX.Xo^ XXX.X PU\n  Heat XXo^* Bath XXo^ \n  H:MM:SS PU H:MM:SS\n  XXXXXX||XX         |\n  <Message>\n  \n  ^ means up/down arrow symbol.  Updated every ???\n  <Message>  (scrolling?)\n    Sample Cold\n    Sample Pasteurizing\n    Pull from Bath!!!!\n    Pasteurization Complete\n    Bath Temperature Low\n    \n    Time computed when?   When Temp > ??\n    \n    \n    \nButtons:\n\nUp\nDown\nMenu   // cycles thru settings.   Times out after nn seconds\nReset  // resets system and PUs.  \nReset+Menu returns settings to default\n\nHardware Connnections:\nANA4,5: I2C to Adafruit RGB Display Shield\nDIG2: Heater OneWire Dallas Temp Sensor\nDIG3: Bath OneWire Dallas Temp Sensor\nDIG4: Bottle OneWire Dallas TempSensor\n\nTBD Features:\nBuzzer upon Bath pull, completion?\nDS1820 is +/- 0.5deg C.   Calibrate?  Assume worst, menu option?\n\n\n*/\n\n\n/*-----------------\n   UTIL FUNCTIONS\n-------------------*/\nvoid MyTone(int freq, int msDuration)\n  {\n  if (freq != 0)\n    tone(PIEZO_PIN, freq);\n  delay(msDuration);\n  noTone(PIEZO_PIN);\n  delay(50);\n  }\n\n\n\n\n\nvoid Settings::Init()\n  {\n  bVer = SETTINGS_VER;\n  wPUPull = PAST_THRESHOLD_PULL;\n  wPUComplete = PAST_THRESHOLD_COMPLETE;\n  wRefTemp = PAST_REFTEMP;\n  wZValue = PAST_ZVALUE;\n  wResetTemp = PAST_RESETTEMP;  \n  }\n\nvoid Settings::WriteEEPROM()\n  {\n  uint8_t *pb;\n  int ib;\n  \n  pb = (uint8_t *)this; //&settings;\n  for (ib = 0; ib < sizeof(Settings); ib++)\n    {\n    EEPROM.write(ib, *pb);\n    pb++;\n    }\n  }\n \n\n  \nint Settings::FReadEEPROM()\n  {\n  uint8_t *pb;\n  int ib;\n  uint8_t b;\n  \n  b = EEPROM.read(0);\n  if (b != SETTINGS_VER)\n    return 0;\n  \n  pb = (uint8_t *)this; //&settings;\n  for (ib = 0; ib < sizeof(Settings); ib++)\n    {\n    *pb = EEPROM.read(ib);\n    pb++;\n    }\n  return 1;\n  }\n  \n  \nuint8_t Settings::GetSetting(int md)\n  {\n  uint8_t *pb;\n  pb = (uint8_t *)this; //&settings;\n  return *(pb+md);\n  }\n  \nvoid Settings::SetSetting(int md, uint8_t b)\n  {\n  uint8_t *pb;\n  pb = (uint8_t *)this; // &settings;\n  *(pb+md) = b;\n  WriteEEPROM();  // ISSUE:  Writes all settings.\n  }\n  \n\n\nvoid PMan::setup(void)\n{\n    uint8_t buttons;\n\n // start serial port\n#ifdef LOG_SERIAL\n  Serial.begin(9600);\n  Serial.println(\"Pasteurization Log\");\n#endif\n  \n  // Start up the library\n  sensorsBottle.begin();\n  //sensorsBath.begin();\n\n  fStrobeOn = 0;\n  fAlertsEnabled = 1;\n  pinMode(STROBE_PIN, OUTPUT);\n  pinMode(PIEZO_PIN, OUTPUT);\n  \n  // set up the LCD's number of rows and columns: \n  lcd.begin(16, 2);\n  lcd.setBacklight(RGBLCD_BLUE);\n  lcd.clear();\n\n  lcd.createChar(PU_CHAR, rgbPUChar);\n  lcd.createChar(DHC_CHAR, rgbDHCChar);\n  InitBargraph();\n // InitSettings();\n \n  buttons = lcd.readButtons();\n  if (!settings.FReadEEPROM())\n    buttons |= BUTTON_SELECT;\n  if (buttons & BUTTON_SELECT)\n    {\n    settings.Init();\n    settings.WriteEEPROM();    \n    lcd.println(\"Default settings\");\n    lcd.setCursor(0,1);\n    lcd.print(\"loaded\");\n    delay(2000);\n    lcd.clear();\n    }\n \n\n  numPU = 0;\n  msTime = millis();\n  msLastButton = msTime;  // init last button so we don't revert to run on first button press\n  msSoundInterval = msTime;\n  msTimePasteurization = 0;\n  mdPast = PAST_MODE_COLD;\n  mdProg = PROG_RUN;\n  \n  sensorsBottle.setWaitForConversion(false);\n  sensorsBottle.requestTemperatures(); // Send the command to get temperatures\n//  sensorsBath.setWaitForConversion(false);\n//  sensorsBath.requestTemperatures(); // Send the command to get temperatures\n}\n\nvoid PMan::print2Digits(int w)\n  {\n  w = w % 100;\n  lcd.print(w/10);\n  lcd.print(w%10);\n  }\n  \nvoid PMan::printFloat2(float num, int digRight)\n  {\n  int numT;\n  \n  numT = num;\n  if (numT >= 10)\n    lcd.print((int) numT / 10);\n  else \n    lcd.print(' ');\n  lcd.print((int) numT % 10);\n  if (digRight > 0)\n    {\n    lcd.print('.');\n    lcd.print((int) (num * 10)%10);\n    }\n  }\n  \n  \nvoid PMan::printTemp(char * strLabel, float numTemp, int prec)\n  {\n  if (prec == 0) // round.   Really should round if prec == 1 too but i just don't care.\n    numTemp += 0.5;\n  lcd.print(strLabel);\n  printFloat2(numTemp, prec);\n  lcd.print((char)DEG_CHAR);\n  }\n  \n\nvoid PMan::printMMSS(unsigned long ms)\n  {\n  unsigned long sec;\n  \n  sec = ms / 1000;\n  print2Digits(sec/60);\n  lcd.print(\":\");\n  print2Digits(sec % 60);\n  }\n  \n  \nvoid PMan::DisplaySetting(void)\n  {\n  SETTING_ENTRY *pse;\n  \n  pse = &rgse[mdProg-1];\n // b = GetSettingFromMdProg();\n  \n // lcd.clear();\n  lcd.setCursor(0,0);\n  lcd.print(pse->szName);\n  lcd.print(\": \");\n  print2Digits(GetSettingFromMdProg());\n  if (pse->flags & SF_TEMPERATURE)\n    lcd.print((char)DEG_CHAR);\n  lcd.print(\"      \");  // finish out the line\n  }\n  \nvoid PMan::HandleSettings(uint8_t buttons)\n  {\n  uint8_t b;\n  SETTING_ENTRY *pse;\n  if (buttons & (BUTTON_UP|BUTTON_DOWN))\n    {\n    pse = &rgse[mdProg-1]; \n    b = GetSettingFromMdProg();\n    if (buttons & BUTTON_UP)\n      {\n      if (b < pse->bMax)\n        SetSettingFromMdProg(b+1);\n      }\n    else\n      {\n      if (b > pse->bMin)\n        SetSettingFromMdProg(b-1);  \n      } \n    }\n  DisplaySetting();\n  }\n \n\n\n  \nvoid PMan::SetPastMode(int md)\n  {\n  int i;\n  if (mdPast != md)\n    {\n    mdPast = md;\n    switch (mdPast)\n      {\n    case PAST_MODE_COLD:\n      fAlertsEnabled = 1;\n      fStrobeOn = 0;\n      break;\n    case PAST_MODE_ACCUMULATING:\n      fStrobeOn = 0;\n      break;\n    case PAST_MODE_PULL:\n      fStrobeOn = 11;\n      break;\n    case PAST_MODE_COMPLETE:\n      fStrobeOn = 1;\n      break;\n      }\n    }\n\n  }\n\nint PMan::FReadTemperatures(void)\n  {\n   \n  float numTempBottleSensor;\n  \n  numTempBottleSensor = sensorsBottle.getTempCByIndex(0);    \n  sensorsBottle.requestTemperatures();\n  \n  if (numTempBottleSensor == DEVICE_DISCONNECTED)\n    {\n    numTempBottle = 0; // ACK!   Is this correct, or should I just pause if it's a hiccup?\n    delay(1000);  // wait 1 second to get sample again.\n    return 0;  \n    }\n   \n  // FIR filter\n  numTempBottle = (numTempBottle + numTempBottleSensor)/2;\n  return 1;\n  }\n  \nvoid PMan::HandlePasteurization(void)\n{\n  unsigned long msTimeNew;\n  unsigned long msDelta;\n  int mdPastNew;\n  \n  // update 1x per second    \n  msTimeNew = millis();\n  msDelta = msTimeNew-msTime;\n  if (msDelta < 1000)\n    return;\n\n  if (!FReadTemperatures())\n    return;\n\n  mdPastNew = mdPast;\n  if (numTempBottle <= settings.wResetTemp)\n    {\n    numPU = 0;\n    msTimePasteurization = 0;\n    mdPastNew = PAST_MODE_COLD;\n    }\n// OLD!   Per Andrew Lea, don't count PUs < wRefTemp (60)  if (numTempBottle > ((int) settings.wRefTemp-(settings.wZValue*3/2)))\n  if (numTempBottle >= settings.wRefTemp)\n    {\n    if (msDelta > 0)\n      {\n      msTimePasteurization += msDelta;\n      numPU += ((float)msDelta/60000.0)*pow(10,(numTempBottle-settings.wRefTemp)/settings.wZValue);\n      }  \n    SetPastMode(PAST_MODE_ACCUMULATING);\n    }  \n  if (numPU >= settings.wPUPull)\n    mdPastNew = PAST_MODE_PULL;\n  if (numPU >= settings.wPUComplete)\n    mdPastNew = PAST_MODE_COMPLETE;\n  SetPastMode(mdPastNew);\n  msTime = msTimeNew;\n  \n}\n\n\nvoid PMan::InitBargraph(void)\n  {\n  bg.setup(&lcd, DX_LCD, 0, 1);\n  }\n\n\nvoid PMan::DrawBargraph(float value, float maxValue)\n  {\n  bg.drawValue(value, maxValue);\n  }\n\n\nvoid PMan::DisplayPasteurizationProgress(void)\n  {\n  switch (mdPast)\n    {\n  default:\n    case PAST_MODE_COLD:\n     // lcd.noBlink();\n      lcd.setBacklight(RGBLCD_WHITE);\n      break;\n    case PAST_MODE_ACCUMULATING:\n      //lcd.noBlink();\n      lcd.setBacklight(RGBLCD_GREEN);\n      break;\n    case PAST_MODE_PULL:\n      //lcd.blink();\n      lcd.setBacklight(RGBLCD_YELLOW);\n      break;\n    case PAST_MODE_COMPLETE:\n      //lcd.blink();\n      lcd.setBacklight(RGBLCD_RED);\n      break;\n    }\n     \n  lcd.home();\n  if (numPU >= 10.0)\n    {\n  //  if (numPU < 100)\n    //  lcd.print(\" \");\n    lcd.print(numPU, 0);  // 2 chars if < 100\n    }\n  else\n    lcd.print(numPU, 1);  // 3 chars\n  lcd.write(PU_CHAR);     \n  \n  if (numPU >= 10.0 && numPU < 100)  \n    lcd.print(\" \");\n  \n  lcd.print(\" \");\n  printTemp(\"\", numTempBottle, 1);\n  lcd.print(\" \");\n\n  lcd.setCursor(11,0);\n  printMMSS(msTimePasteurization);\n\n  DrawBargraph(numPU, settings.wPUPull);\n  //lcd.setCursor(15,1);\n  //lcd.write(DHC_CHAR);\n\n    \n#ifdef LOG_SERIAL\n  Serial.print(msTimePasteurization);\n  Serial.print(',');\n  Serial.print(numTempHeater);\n  Serial.print(',');\n  Serial.print(numTempBath);\n  Serial.print(',');\n  Serial.print(numTempBottle);\n  Serial.print(',');\n  Serial.println(numPU);\n#endif\n  }\n  \n\n  \nvoid PMan::MakePasteurizationSounds(void)\n  {\n  unsigned long ms;\n  \n  if (!fAlertsEnabled)\n    return;  \n  ms = millis();\n  if (ms > msSoundInterval+10000)\n    {\n    msSoundInterval = ms;\n    \n    switch (mdPast)\n      {\n    case PAST_MODE_COLD:\n      break;\n    case PAST_MODE_ACCUMULATING:\n      MyTone(100, 100);\n      break;\n    case PAST_MODE_PULL:\n      MyTone(1000, 450);\n      MyTone(400, 300);\n      MyTone(600, 200);\n      MyTone(400, 300);\n  \n      break;\n    case PAST_MODE_COMPLETE:\n      MyTone(1000, 400);\n      MyTone(2000, 400);\n      MyTone(1000, 400);\n      MyTone(2000, 400);\n      MyTone(1000, 400);\n      MyTone(2000, 400);\n      break;\n      }\n    }\n\n  }\n  \nvoid PMan::UpdateStrobe(void)\n  {\n  digitalWrite(STROBE_PIN, fAlertsEnabled && fStrobeOn);\n  }\n      \n\nvoid PMan::DelayButtonUp(int ms)\n  {\n  uint8_t buttons;\n  unsigned long msStop;\n  \n  msStop = millis()+ms;\n  \n  while (millis() < msStop)\n    {\n    buttons = lcd.readButtons();\n    if (buttons == 0)\n      return;\n    }\n  }\n  \n  \n \nvoid PMan::HandleButtons(void)\n  {\n   uint8_t buttons;\n   \n   buttons = lcd.readButtons();\n   if (buttons)\n     msLastButton = millis();\n   else\n     {\n     if ((millis() > (msLastButton+8000)) && (mdProg != PROG_RUN))  // Revert to RUN display after 8 seconds of no button presses\n       mdProg = PROG_RUN;\n     }\n   \n   if (!buttons)\n     return;\n   if (fAlertsEnabled && fStrobeOn)\n     {\n     fAlertsEnabled = 0;  // kinda goofy. but annoying piezo sounds comes on with strobe, and this turns both off\n     goto Return;\n     }\n  \n   \n   if (buttons & BUTTON_SELECT)\n      {\n      lcd.clear();\n      mdProg ++;\n      if (mdProg == PROG_MAX)\n        mdProg = PROG_MIN;\n      } \n  if (mdProg != PROG_RUN)\n    HandleSettings(buttons);\n Return:\n  if (buttons)\n    DelayButtonUp(400); \n  }\n\n\nvoid PMan::loop(void)\n{ \n\n  HandlePasteurization();  \n  HandleButtons();\n\n  if (mdProg == PROG_RUN)\n    {\n    DisplayPasteurizationProgress();\n    MakePasteurizationSounds();\n    UpdateStrobe();\n    }\n}\n \n\n// arduino sketch entrypoints vectors\n\nvoid setup(void)\n  {\n  pman.setup();  \n  }\n\nvoid loop(void)\n  {\n  pman.loop();\n  }\n  \n  \n",
+			"file": "PasteurizeMan3.ino",
+			"file_size": 16076,
+			"file_write_time": 1417979267000000,
+			"settings":
+			{
+				"buffer_size": 16063,
+				"line_ending": "Unix"
+			}
+		}
+	],
+	"build_system": "",
+	"command_palette":
+	{
+		"height": 0.0,
+		"selected_items":
+		[
+		],
+		"width": 0.0
+	},
+	"console":
+	{
+		"height": 0.0
+	},
+	"distraction_free":
+	{
+		"menu_visible": true,
+		"show_minimap": false,
+		"show_open_files": false,
+		"show_tabs": false,
+		"side_bar_visible": false,
+		"status_bar_visible": false
+	},
+	"file_history":
+	[
+	],
+	"find":
+	{
+		"height": 0.0
+	},
+	"find_in_files":
+	{
+		"height": 0.0,
+		"where_history":
+		[
+		]
+	},
+	"find_state":
+	{
+		"case_sensitive": false,
+		"find_history":
+		[
+		],
+		"highlight": true,
+		"in_selection": false,
+		"preserve_case": false,
+		"regex": false,
+		"replace_history":
+		[
+		],
+		"reverse": false,
+		"show_context": true,
+		"use_buffer2": true,
+		"whole_word": false,
+		"wrap": true
+	},
+	"groups":
+	[
+		{
+			"selected": 0,
+			"sheets":
+			[
+				{
+					"buffer": 0,
+					"file": "PasteurizeMan3.ino",
+					"settings":
+					{
+						"buffer_size": 16063,
+						"regions":
+						{
+						},
+						"selection":
+						[
+							[
+								671,
+								671
+							]
+						],
+						"settings":
+						{
+							"syntax": "Packages/Text/Plain text.tmLanguage",
+							"tab_size": 2,
+							"translate_tabs_to_spaces": true
+						},
+						"translation.x": 0.0,
+						"translation.y": 247.0,
+						"zoom_level": 1.0
+					},
+					"type": "text"
+				}
+			]
+		}
+	],
+	"incremental_find":
+	{
+		"height": 0.0
+	},
+	"input":
+	{
+		"height": 0.0
+	},
+	"layout":
+	{
+		"cells":
+		[
+			[
+				0,
+				0,
+				1,
+				1
+			]
+		],
+		"cols":
+		[
+			0.0,
+			1.0
+		],
+		"rows":
+		[
+			0.0,
+			1.0
+		]
+	},
+	"menu_visible": true,
+	"replace":
+	{
+		"height": 0.0
+	},
+	"save_all_on_build": true,
+	"select_file":
+	{
+		"height": 0.0,
+		"selected_items":
+		[
+		],
+		"width": 0.0
+	},
+	"select_project":
+	{
+		"height": 0.0,
+		"selected_items":
+		[
+		],
+		"width": 0.0
+	},
+	"show_minimap": true,
+	"show_open_files": false,
+	"show_tabs": true,
+	"side_bar_visible": true,
+	"side_bar_width": 150.0,
+	"status_bar_visible": true
+}
